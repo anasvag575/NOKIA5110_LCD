@@ -23,20 +23,26 @@ The user has the option of using SPI in either DMA or polling mode for the trans
 
 For the initialization user has to define a screen handle, initialize the fields and make a call to the appropriate initialization routine like below:
 
-    uint8_t pcd8544_buffer[PCD8544_BUFFER_SZ]; 						// The buffer to use
-    pcd_8544_t pcd8544_handle ={.rst_pin = RST_PIN,	 				// Which GPIOs to use (Pin-port combinations)//
+    uint8_t pcd8544_buffer[PCD8544_BUFFER_SZ];
+    pcd_8544_t pcd8544_handle ={ // Which GPIOs to use (Pin-port combinations) //
+    							.rst_pin = RST_PIN,	
                                 .rst_port = RST_PORT,
                                 .ce_pin = CE_PIN,
                                 .ce_port = CE_PORT,
                                 .dc_pin = DC_PIN,
                                 .dc_port = DC_PORT,
                                 
-                                .h_spi = &hspi2,                    // SPI HAL handle //
-                                .buffer = pcd8544_buffer, 			// We use the buffer above //
-                                .contast = PCD8544_VOP_DEFAULT,		// Set contrast //
-                                .bias = PCD8544_BIAS_DEFAULT  };	// Set bias voltage //
+                                // SPI HAL handle and the buffer to use //
+                                .h_spi = &hspi2,
+                                .buffer = pcd8544_buffer,
+    
+                                // Set contrast/bias values //
+                                .contast = PCD8544_VOP_DEFAULT,
+                                .bias = PCD8544_BIAS_DEFAULT
+                               };
                                 
-    bool status = PCD8544_init(&pcd8544_handle);					// Initialization routine //
+    // Initialization routine //
+    bool status = PCD8544_init(&pcd8544_handle);
 
 Common things to look out for (issues/tips):
 
@@ -53,15 +59,20 @@ Common things to look out for (issues/tips):
 
 The library supports multiple shapes, bitmap drawing and character printing. User has to call a drawing routine followed by a screen refresh, just like below:
 
-    PCD8544_draw_line(0, 70 , 0, 10, true);					// Draw shapes on the screen //
+    // Draw shapes on the screen //
+    PCD8544_draw_line(0, 70 , 0, 10, true);
     PCD8544_draw_circle(0, 20 , 10, true);
     PCD8544_draw_rectangle(0, 0, 20, 20, true, false);
     
-    PCD8544_draw_bitmap(bitmap, 0, 0, 25, 25); 				// Bitmap drawing //
-    PCD8544_coord(0, 0);									// Set XY initial text coordinates
-    PCD8544_print_str("Hello World", LARGE_FONT, false);	// Print a string on the display //
+    // Bitmap drawing //
+    PCD8544_draw_bitmap(bitmap, 0, 0, 25, 25);
     
-    PCD8544_refresh();										// Update the display //
+    // Set XY initial text coordinates and then print string //
+    PCD8544_coord(0, 0);
+    PCD8544_print_str("Hello World", LARGE_FONT, false);
+    
+    // Update the display //
+    PCD8544_refresh();
 
 For the character printing, 3 fonts are supported with different centering options when calling the printing routines.
 
