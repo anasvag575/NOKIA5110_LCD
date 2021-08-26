@@ -3,12 +3,43 @@
   * Contact: anasvag29@gmail.com
   */
 
-#include <pcd_8544.h> /* External header */
+#include <pcd_8544.h>       /* External header */
 #include <pcd_8544_font.h>
 
-#include <string.h> /* For memcpy */
-#include <stdio.h>  /* TODO - For debug printf */
-#include <stdlib.h>  /* TODO - For debug printf */
+#include <string.h>         /* For memcpy */
+#include <stdio.h>          /* TODO - For debug printf */
+#include <stdlib.h>         /* TODO - For debug printf */
+
+/* Screen size and parameters */
+#define LCDWIDTH            PCD8544_WIDTH
+#define LCDHEIGHT           PCD8544_HEIGHT
+#define LCDBUFFER_SZ        PCD8544_BUFFER_SZ
+
+/* Basic instruction set - Set power and instruction set */
+#define PCD8544_FUNCTIONSET             0x20
+#define PCD8544_POWERDOWN               0x04        /* Function set, Power down mode */
+#define PCD8544_ENTRYMODE               0x02        /* Function set, Entry mode */
+#define PCD8544_EXTENDEDINSTRUCTION     0x01        /* Function set, Extended instruction set control */
+
+/* Basic instruction set - Set display configuration */
+#define PCD8544_DISPLAYCONTROL          0x08
+#define PCD8544_DISPLAYBLANK            0x00         /* Display control, blank */
+#define PCD8544_DISPLAYALLON            0x01         /* Display control, all segments on */
+#define PCD8544_DISPLAYNORMAL           0x04         /* Display control, normal mode */
+#define PCD8544_DISPLAYINVERTED         0x05         /* Display control, inverse mode */
+
+/* Basic instruction set - Set XY address of RAM */
+#define PCD8544_SETYADDR                0x40        /* 0 <= Y <= 5 */
+#define PCD8544_SETXADDR                0x80        /* 0 <= X <= 83 */
+
+/* Extended instruction set - Set temperature coefficient */
+#define PCD8544_SETTEMP                 0x04        /* 0 <= Coeff <= 0x03 */
+
+/* Extended instruction set - Set bias system */
+#define PCD8544_SETBIAS                 0x10        /* 0 <= bias <= 0x07 */
+
+/* Extended instruction set - Write Vop to register */
+#define PCD8544_SETVOP                  0x80        /* 0 <= vop <= 0x7f */
 
 /* Macros to set and reset pins */
 #define SET_GPIO(port, pin)     (HAL_GPIO_WritePin((port), (pin), GPIO_PIN_SET))
@@ -23,10 +54,7 @@
         (b) = __loc_var__;                  \
     }while(0)
 
-/* TODO - Remove these when done */
-#define DEBUG_ACTIVE
-
-#ifdef DEBUG_ACTIVE
+#ifdef PCD8544_DEBUG
     #define ASSERT_DEBUG(cond, ...) do{ if((cond)) printf(__VA_ARGS__);}while(0)
 #else
     #define ASSERT_DEBUG(cond, ...)
@@ -36,9 +64,15 @@
 static pcd_8544_t *_screen_h = NULL;
 
 #ifdef PCD8544_DMA_ACTIVE
-    /* We need to have a constant buffer for DMA transfers (commands) */
+    /* We need to have a constant buffer for DMA transfers (commands at least) */
     static uint8_t command_buffer[7];
 
+    /*!
+        @brief    The internal ISR callback when a DMA transfer is complete.
+        This unfortunately might be need to be defined somewhere else, in case
+        multiple SPIs with DMA are used. For now it is left here as an example.
+        @param    hspi      SPI handle, given by the external ISR
+    */
     void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
     {
         /* Chip deselect - Active low */
@@ -272,11 +306,13 @@ static void _init_sequence(uint8_t *command_buffer)
 /**********************************************************/
 
 /*!
-    @brief    Initializes the display.
+    @brief    Initializes the display and the library with a new handle.
     @return   Success(True) or Failure(False) of the procedure.
 */
 bool PCD8544_init(pcd_8544_t *init)
 {
+    ASSERT_DEBUG(init == NULL, "Null pointer - PCD8544_init()\n");
+
     /* Initialize the screen handle */
     _screen_h = init;
 
@@ -319,9 +355,9 @@ bool PCD8544_init(pcd_8544_t *init)
 */
 pcd_8544_t *PCD8544_handle_swap(pcd_8544_t *new)
 {
-    pcd_8544_t *old = _screen_h;
+    ASSERT_DEBUG(new != NULL, "Null pointer - PCD8544_handle_swap()\n");
 
-    /* Update */
+    pcd_8544_t *old = _screen_h;
     _screen_h = new;
 
     return old;
@@ -390,7 +426,7 @@ bool PCD8544_sleep_mode(bool enable)
 
     if(enable) /* Buffer and settings are saved */
     {
-        command_buffer[1] = PCD8544_FUNCTIONSET | PCD8544_POWERDOWN;
+        command_buffer[0] = PCD8544_FUNCTIONSET | PCD8544_POWERDOWN;
         return _send_packet(command_buffer, 1, false);
     }
 
@@ -448,15 +484,6 @@ bool PCD8544_bias(uint8_t bias)
     command_buffer[2] = PCD8544_FUNCTIONSET;
 
     return _send_packet(command_buffer, 3, false);
-}
-
-/*!
-    @brief    Return SPI's transfer state.
-    @return   True in case a SPI transfer is active, otherwise false (polling mode always false).
-*/
-bool PCD8544_transfer()
-{
-
 }
 
 /**********************************************************/
@@ -633,10 +660,8 @@ void PCD8544_draw_rectangle(uint8_t x0, uint8_t x1, uint8_t y0, uint8_t y1, bool
         return;
     }
 
-//    /* It's more efficient to use vertical lines to draw for filling.
-//     * That's the case since fewer memory accesses and instructions happen (on average) */
-//    for(uint8_t i = 0; i < len_x; i++) PCD8544_draw_vline(x0 + i, y0, len_y, color);
-
+    /* It's more efficient to use vertical lines to draw for filling.
+     * That's the case since fewer memory accesses and instructions happen (on average) */
     if(((uint16_t)y0 + len_y) >= LCDHEIGHT) len_y = LCDHEIGHT - y0;
     if(((uint16_t)x0 + len_x) >= LCDWIDTH) len_x = LCDWIDTH - x0;
 
@@ -647,7 +672,7 @@ void PCD8544_draw_rectangle(uint8_t x0, uint8_t x1, uint8_t y0, uint8_t y1, bool
     /* Partial bank fill */
     if(temp)
     {
-        ASSERT_DEBUG(pos >= LCDBUFFER_SZ, "Error at PCD8544_draw_vline\n");
+        ASSERT_DEBUG(pos >= LCDBUFFER_SZ, "Error at PCD8544_draw_rectangle\n");
         uint8_t pixel_num = 8 - temp;
 
         if(len_y <= pixel_num) /* Sub-case that needs to be handled */
@@ -665,7 +690,7 @@ void PCD8544_draw_rectangle(uint8_t x0, uint8_t x1, uint8_t y0, uint8_t y1, bool
     /* Number of complete banks to fill */
     while(len_y >= 8)
     {
-        ASSERT_DEBUG(pos >= LCDBUFFER_SZ, "Error at PCD8544_draw_vline\n");
+        ASSERT_DEBUG(pos >= LCDBUFFER_SZ, "Error at PCD8544_draw_rectangle\n");
         memset(_screen_h->buffer + pos, byte_in, len_x * sizeof(uint8_t));
         pos += LCDWIDTH;
         len_y -= 8;
@@ -807,12 +832,12 @@ void PCD8544_draw_circle(uint8_t x, uint8_t y, uint8_t r, bool color)
     do
     {
         PCD8544_set_pixel(x+a, y+b, color);
-        PCD8544_set_pixel(x-a, y+b, color);
-        PCD8544_set_pixel(x+a, y-b, color);
-        PCD8544_set_pixel(x-a, y-b, color);
         PCD8544_set_pixel(x+b, y+a, color);
-        PCD8544_set_pixel(x-b, y+a, color);
+        PCD8544_set_pixel(x+a, y-b, color);
         PCD8544_set_pixel(x+b, y-a, color);
+        PCD8544_set_pixel(x-a, y+b, color);
+        PCD8544_set_pixel(x-b, y+a, color);
+        PCD8544_set_pixel(x-a, y-b, color);
         PCD8544_set_pixel(x-b, y-a, color);
 
         if(p < 0)
@@ -826,62 +851,124 @@ void PCD8544_draw_circle(uint8_t x, uint8_t y, uint8_t r, bool color)
             a++;
             b--;
         }
-    }while(a <=b);
+    }while(a <= b);
 }
 
 /*!
-    @brief    Draws a circle part - Uses the Midpoint circle algorithm.
-    @param    x0        Center x-coordinate
-    @param    y0        Center y-coordinate
-    @param    r         Circle radius
-    @param    corner    Which corners to draw, using coordinates
-    (0x04 - SE, 0x2 - NE, 0x08 - SW, 0x01 - NW)
-    @param    color     Black(true)/White(false)
+    @brief    Draws a filled circle - Uses the Midpoint circle algorithm.
+    @param    x0   Center x-coordinate
+    @param    y0   Center y-coordinate
+    @param    r    Circle radius
+    @param    color - black(true)/white(false)
 */
-void PCD8544_draw_part_circle(uint8_t x, uint8_t y, uint8_t r, uint8_t corner, bool color)
+void PCD8544_draw_fill_circle(uint8_t x0, uint8_t y0, uint8_t r, bool color)
 {
-    int8_t a = 0;
-    int8_t b = r;
-    int8_t p = 1 - r;
+    /* Write out the middle line - we use the pixel setters since lines might be out of bounds */
+    for(uint8_t i = 0; i < (2 * r + 1); i++) PCD8544_set_pixel(x0, y0 - r + i, color);
 
-    do
+    int16_t f = 1 - r;
+    int16_t ddF_x = 1;
+    int16_t ddF_y = -2 * r;
+    int16_t x = 0;
+    int16_t y = r;
+    int16_t px = x;
+    int16_t py = y;
+
+    while (x < y)
     {
-        if(corner & 0x4)
+        if (f >= 0)
         {
-            PCD8544_set_pixel(x+a, y+b, color);
-            PCD8544_set_pixel(x+b, y+a, color);
+            y--;
+            ddF_y += 2;
+            f += ddF_y;
         }
 
-        if(corner & 0x2)
+        x++;
+        ddF_x += 2;
+        f += ddF_x;
+
+        // These checks avoid double-drawing certain lines, important
+        // for the SSD1306 library which has an INVERT drawing mode.
+        if (x < (y + 1))
         {
-            PCD8544_set_pixel(x+a, y-b, color);
-            PCD8544_set_pixel(x+b, y-a, color);
+            for(uint i = 0; i < 2 * y; i++) /* Same as initial vline drawing */
+            {
+                PCD8544_set_pixel(x0 + x, y0 - y + i, color);
+                PCD8544_set_pixel(x0 - x, y0 - y + i, color);
+            }
         }
 
-        if(corner & 0x8)
+        if (y != py)
         {
-            PCD8544_set_pixel(x-a, y+b, color);
-            PCD8544_set_pixel(x-b, y+a, color);
+            for(uint i = 0; i < 2 * px; i++) /* Same as initial vline drawing */
+            {
+                PCD8544_set_pixel(x0 + py, y0 - px + i, color);
+                PCD8544_set_pixel(x0 - py, y0 - px + i, color);
+            }
+
+            py = y;
         }
 
-        if(corner & 0x1)
-        {
-            PCD8544_set_pixel(x-a, y-b, color);
-            PCD8544_set_pixel(x-b, y-a, color);
-        }
+        px = x;
+    }
 
-        if(p < 0)
+}
+
+/*!
+    @brief    Draw a rounded rectangle.
+    @param    x0     Upper left x-coordinate
+    @param    x1     Lower right x-coordinate
+    @param    y0     Upper left y-coordinate
+    @param    y1     Lower right y-coordinate
+    @param    color  Black(true)/white(false)
+    @param    fill   If true also fill the rectangle with the specified color
+*/
+void PCD8544_draw_round_rect(uint8_t x0, uint8_t x1, uint8_t y0, uint8_t y1, bool color, bool fill)
+{
+    /* Just in case mistakes were made */
+    if(x0 > x1) SWAP_VAR(x0, x1);
+    if(y0 > y1) SWAP_VAR(y0, y1);
+
+    /* As long as it is a valid rectangle */
+    if((x1 - x0) > 4 && (y1 - y0) > 4)
+    {
+        if(fill)
         {
-            p += (3 + 2*a);
-            a++;
+            /* Draw a normal filed rectangle and unset the necessary bits */
+            PCD8544_draw_rectangle(x0, x1, y0, y1, color, true);
+
+            /* Upper left corner */
+            PCD8544_set_pixel(x0, y0, !color);
+            PCD8544_set_pixel(x0 + 1, y0, !color);
+            PCD8544_set_pixel(x0, y0 + 1, !color);
+
+            /* Upper right corner */
+            PCD8544_set_pixel(x1, y0, !color);
+            PCD8544_set_pixel(x1 - 1, y0, !color);
+            PCD8544_set_pixel(x1, y0 + 1, !color);
+
+            /* Lower left corner */
+            PCD8544_set_pixel(x0, y1, !color);
+            PCD8544_set_pixel(x0 + 1, y1, !color);
+            PCD8544_set_pixel(x0, y1 - 1, !color);
+
+            /* Lower right corner */
+            PCD8544_set_pixel(x1, y1, !color);
+            PCD8544_set_pixel(x1 - 1, y1, !color);
+            PCD8544_set_pixel(x1, y1 - 1, !color);
         }
         else
         {
-            p += (5 + 2*(a-b));
-            a++;
-            b--;
+            PCD8544_set_pixel(x0 + 1, y0 + 1, color);
+            PCD8544_set_pixel(x1 - 1, y0 + 1, color);
+            PCD8544_set_pixel(x0 + 1, y1 - 1, color);
+            PCD8544_set_pixel(x1 - 1, y1 - 1, color);
+            PCD8544_draw_hline(x0 + 2, y0, x1 - x0 - 3, color);
+            PCD8544_draw_hline(x0 + 2, y1, x1 - x0 - 3, color);
+            PCD8544_draw_vline(x0, y0 + 2, y1 - y0 - 3, color);
+            PCD8544_draw_vline(x1, y0 + 2, y1 - y0 - 3, color);
         }
-    }while(a <=b);
+    }
 }
 
 /**********************************************************/
@@ -969,7 +1056,6 @@ void PCD8544_draw_bitmap_opt8(const uint8_t *bitmap, uint8_t x0, uint8_t y0, uin
 */
 void PCD8544_coord(uint8_t x, uint8_t y)
 {
-    /* X-coordinate is common for both fonts */
     if(x < LCDWIDTH) _screen_h->x_pos = x;
     if(y < LCDHEIGHT) _screen_h->y_pos = y >> 3;
 }
@@ -1189,151 +1275,3 @@ void PCD8544_print_fstr(const char *str, uint8_t option, uint8_t x, uint8_t y, b
         }
     }
 }
-
-
-/* TODO - Fix these they do not work correctly */
-
-/*!
-    @brief    Draws a circle - Uses the Midpoint circle alogrithm, also taken from Adafruit GFX library.
-    @param    x0   Center x-coordinate
-    @param    y0   Center y-coordinate
-    @param    r    Circle radius
-    @param    color - black(true)/white(false)
-*/
-void PCD8544_draw_circle_tmp(uint8_t x0, uint8_t y0, uint8_t r, bool color)
-{
-    int16_t f = 1 - r;
-    int16_t ddF_x = 1;
-    int16_t ddF_y = -2 * r;
-    int16_t x = 0;
-    int16_t y = r;
-
-    /* Write out the cross */
-    PCD8544_set_pixel(x0, y0 + r, color);
-    PCD8544_set_pixel(x0, y0 - r, color);
-    PCD8544_set_pixel(x0 + r, y0, color);
-    PCD8544_set_pixel(x0 - r, y0, color);
-
-    while (x < y)
-    {
-        if (f >= 0)
-        {
-            y--;
-            ddF_y += 2;
-            f += ddF_y;
-        }
-
-        x++;
-        ddF_x += 2;
-        f += ddF_x;
-
-        PCD8544_set_pixel(x0 + x, y0 + y, color);
-        PCD8544_set_pixel(x0 - x, y0 + y, color);
-        PCD8544_set_pixel(x0 + x, y0 - y, color);
-        PCD8544_set_pixel(x0 - x, y0 - y, color);
-        PCD8544_set_pixel(x0 + y, y0 + x, color);
-        PCD8544_set_pixel(x0 - y, y0 + x, color);
-        PCD8544_set_pixel(x0 + y, y0 - x, color);
-        PCD8544_set_pixel(x0 - y, y0 - x, color);
-    }
-}
-
-void PCD8544_draw_fill_circle(uint8_t x0, uint8_t y0, uint8_t r, bool color)
-{
-    PCD8544_draw_vline(x0, y0 - r, 2 * r + 1, color);
-    PCD8544_draw_part_fill_circle(x0, y0, r, 3, 0, color);
-}
-
-/* Draws a quarter up to a full circle - Uses the Midpoint circle alogrithm, also taken from Adafruit GFX library. */
-void PCD8544_draw_part_circle_tmp(uint8_t x0, uint8_t y0, uint8_t r, uint8_t cornername, bool color)
-{
-    int16_t f = 1 - r;
-    int16_t ddF_x = 1;
-    int16_t ddF_y = -2 * r;
-    int16_t x = 0;
-    int16_t y = r;
-
-    while (x < y)
-    {
-        if (f >= 0)
-        {
-            y--;
-            ddF_y += 2;
-            f += ddF_y;
-        }
-
-        x++;
-        ddF_x += 2;
-        f += ddF_x;
-
-        if (cornername & 0x4)
-        {
-            PCD8544_set_pixel(x0 + x, y0 + y, color);
-            PCD8544_set_pixel(x0 + y, y0 + x, color);
-        }
-
-        if (cornername & 0x2)
-        {
-            PCD8544_set_pixel(x0 + x, y0 - y, color);
-            PCD8544_set_pixel(x0 + y, y0 - x, color);
-        }
-
-        if (cornername & 0x8)
-        {
-            PCD8544_set_pixel(x0 - y, y0 + x, color);
-            PCD8544_set_pixel(x0 - x, y0 + y, color);
-        }
-
-        if (cornername & 0x1)
-        {
-            PCD8544_set_pixel(x0 - y, y0 - x, color);
-            PCD8544_set_pixel(x0 - x, y0 - y, color);
-        }
-    }
-}
-
-void PCD8544_draw_part_fill_circle(uint8_t x0, uint8_t y0, uint8_t r, uint8_t corners, int8_t delta, bool color)
-{
-    int16_t f = 1 - r;
-    int16_t ddF_x = 1;
-    int16_t ddF_y = -2 * r;
-    int16_t x = 0;
-    int16_t y = r;
-    int16_t px = x;
-    int16_t py = y;
-
-    delta++; // Avoid some +1's in the loop
-
-    while (x < y)
-    {
-        if (f >= 0)
-        {
-            y--;
-            ddF_y += 2;
-            f += ddF_y;
-        }
-
-        x++;
-        ddF_x += 2;
-        f += ddF_x;
-
-        // These checks avoid double-drawing certain lines, important
-        // for the SSD1306 library which has an INVERT drawing mode.
-        if (x < (y + 1))
-        {
-            if (corners & 1) PCD8544_draw_vline(x0 + x, y0 - y, 2 * y + delta, color);
-            if (corners & 2) PCD8544_draw_vline(x0 - x, y0 - y, 2 * y + delta, color);
-        }
-
-        if (y != py)
-        {
-            if (corners & 1) PCD8544_draw_vline(x0 + py, y0 - px, 2 * px + delta, color);
-            if (corners & 2) PCD8544_draw_vline(x0 - py, y0 - px, 2 * px + delta, color);
-
-            py = y;
-        }
-
-        px = x;
-    }
-}
-

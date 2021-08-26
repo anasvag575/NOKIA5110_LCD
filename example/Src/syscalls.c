@@ -51,6 +51,7 @@ __attribute__((weak)) int _read(int file, char *ptr, int len)
 return len;
 }
 
+/* Added for terminal printing */
 __attribute__((weak)) int _write(int file, char *ptr, int len)
 {
     extern UART_HandleTypeDef huart2;

@@ -6,7 +6,6 @@
 #include <pcd_8544.h> /* NOKIA 5110 - PCD8544 */
 #include "main.h"
 #include <stdio.h>
-#include <pcd_8544_font.h>
 
 /* Private variables */
 SPI_HandleTypeDef hspi2;
@@ -14,30 +13,14 @@ DMA_HandleTypeDef hdma_spi2_tx;
 UART_HandleTypeDef huart2;
 
 /** the memory buffer for the LCD */
-uint8_t pcd8544_buffer[LCDBUFFER_SZ] = {0xff};
-pcd_8544_t pcd8544_handle =
-                        {
-                            .rst_pin = GPIO_PIN_0,
-                            .ce_pin = GPIO_PIN_1,
-                            .dc_pin = GPIO_PIN_2,
+uint8_t pcd8544_buffer[PCD8544_BUFFER_SZ] = {0xff};
 
-                            .rst_port = GPIOB,
-                            .ce_port = GPIOB,
-                            .dc_port = GPIOB,
-
-                            .h_spi = &hspi2,
-                            .buffer = pcd8544_buffer,
-
-                            .contast = PCD8544_VOP_DEFAULT,     /* This varies wildly from screen to screen !!! */
-                            .bias = PCD8544_BIAS_DEFAULT
-
-                            #ifdef PCD8544_DMA_ACTIVE
-                                , .dma_transfer = false
-                            #endif
-                        };
-
+/* Timer - Using the DWT core one, it's enough for our purposes */
 #define START_TIMER()   (DWT->CYCCNT = 0)
 #define GET_TIMER()     (DWT->CYCCNT)
+
+/* Macro used for screen testing*/
+#define SCREEN_DELAY_FILL(delay, color) do{HAL_Delay((delay));PCD8544_fill((color));}while(0)
 
 /* Private function prototypes */
 static void SystemClock_Config(void);
@@ -48,6 +31,8 @@ static void MX_USART2_UART_Init(void);
 static void MX_Core_Counter_Init(void);
 
 /* Testing */
+static void init_example();
+static void draw_examples();
 static void test_lcd_basic();
 static void test_lcd_simple_patterns();
 static void test_lcd_intermediate_patterns();
@@ -66,12 +51,108 @@ int main(void)
     /* Configure the system clock */
     SystemClock_Config();
 
-    /* Initialize all configured peripherals */
-    MX_DMA_Init();
+    /* Initialize all peripherals */
+    MX_DMA_Init();  // DMA should be first - SPI Initialization will access DMA registers //
     MX_GPIO_Init();
     MX_SPI2_Init();
     MX_USART2_UART_Init();
     MX_Core_Counter_Init();
+
+    while(1)
+    {
+        /* How to initialize the screen - Mostly documentation */
+        init_example();
+        HAL_Delay(5000);
+
+        /* Drawing and setting the screen */
+        draw_examples();
+    }
+
+}
+
+/**********************************/
+/*********** TEST CODE ************/
+/**********************************/
+
+/* Showcases initialization and how to set the screen up */
+static void init_example()
+{
+    pcd_8544_t pcd8544_handle;
+    printf("\n\n************DUMMY TEST************\n");
+
+    /* Extra GPIOs to be used besides MOSI and CLK for the SPI Alternate function pins
+     * Simply use the HAL definitions of the pins/ports and set them on the screen handle.
+     * Make sure that they are initialized beforehand and they are ready to go {MX_GPIO_Init()}
+     * */
+    pcd8544_handle.rst_pin = GPIO_PIN_0;
+    pcd8544_handle.ce_pin = GPIO_PIN_1;
+    pcd8544_handle.dc_pin = GPIO_PIN_2;
+    pcd8544_handle.rst_port = GPIOB;
+    pcd8544_handle.ce_port = GPIOB;
+    pcd8544_handle.dc_port = GPIOB;
+
+    /* The HAL handle for the SPI peripheral to use. Same as before make sure to initialize SPI before
+     * initializing the screen. SPI initialization (DMA or not) takes place in the following routine:
+     * - MX_DMA_Init<main.c> (if DMA is used it should be initialized beforehand)
+     * - MX_SPI2_Init <main.c> (Initializes SPI according to the options in the handle)
+     * - HAL_SPI_MspInit()<stm32f4xx_hal_msp.c> (Called by the HAL_SPI_Init() and initializes
+     * clocks, GPIOs and DMA if it is needed)
+     *
+     * Most of these will be taken care of by CUBEMX during code generation for your board.
+     * */
+    pcd8544_handle.h_spi = &hspi2;
+
+    /* The buffer to be used by this screen handle. This is were drawing is taken place
+     * and then user with a call to PCD8544_refresh() updates the contents of the actual display.
+     * This is separate in case multiple screens (which share a buffer) are used or
+     * memory is shared and the buffer is also used for something else afterwards.
+     * */
+    pcd8544_handle.buffer = pcd8544_buffer;
+
+    /* These are the base screen settings. In general the contrast value varies wildly from screen to screen
+     * so it might be the first thing needed to modify and experiment with. */
+    pcd8544_handle.contast = PCD8544_VOP_DEFAULT;   // In case of problem adjust up/down by steps of 5
+    pcd8544_handle.bias = PCD8544_BIAS_DEFAULT;
+
+    /* In case the user wants to use DMA, they should uncomment the PCD8544_DMA_ACTIVE definition on
+     * the library header file. This means that the library will use DMA for SPI transmissions.
+     * User can check if a transfer is underway by the {dma_transfer} flag on the screen handle.
+     *
+     * Finaly, the DMA has to be set up beforehand and be ready to go for the library to function
+     * correctly.
+     * */
+
+    /* Initialize PCD_8544 */
+    if(!PCD8544_init(&pcd8544_handle))
+    {
+        printf("\tInitialization failed, entering infinite loop...\n");
+        while(1);
+    }
+    else
+    {
+        printf("\tDummy initialization complete\n");
+    }
+}
+
+/* The settings and drawing testbench */
+void draw_examples(void)
+{
+    pcd_8544_t pcd8544_handle =
+                            {
+                                .rst_pin = GPIO_PIN_0,
+                                .ce_pin = GPIO_PIN_1,
+                                .dc_pin = GPIO_PIN_2,
+
+                                .rst_port = GPIOB,
+                                .ce_port = GPIOB,
+                                .dc_port = GPIOB,
+
+                                .h_spi = &hspi2,
+                                .buffer = pcd8544_buffer,
+
+                                .contast = PCD8544_VOP_DEFAULT,
+                                .bias = PCD8544_BIAS_DEFAULT
+                            };
 
     /* Initialize PCD_8544 */
     if(!PCD8544_init(&pcd8544_handle))
@@ -80,24 +161,20 @@ int main(void)
         while(1);
     }
 
-    /* Infinite loop */
-    while (1)
-    {
-        printf("\n\n************BASIC TESTS************\n");
-        test_lcd_basic();
+    printf("\n\n************BASIC TESTS************\n");
+    test_lcd_basic();
 
-        printf("\n\n************PATTERN TESTS************\n");
-        test_lcd_simple_patterns();
+    printf("\n\n************PATTERN TESTS************\n");
+    test_lcd_simple_patterns();
 
-        printf("\n\n************PATTERN TESTS (INTERMEDIATE)************\n");
-        test_lcd_intermediate_patterns();
+    printf("\n\n************PATTERN TESTS (INTERMEDIATE)************\n");
+    test_lcd_intermediate_patterns();
 
-        printf("\n\n************BITMAP TESTS************\n");
-        test_lcd_bitmaps();
+    printf("\n\n************BITMAP TESTS************\n");
+    test_lcd_bitmaps();
 
-        printf("\n\n************TEXT TESTS************\n");
-        test_lcd_text();
-    }
+    printf("\n\n************TEXT TESTS************\n");
+    test_lcd_text();
 }
 
 /* Tests basic functionalities */
@@ -108,44 +185,50 @@ static void test_lcd_basic()
     if(PCD8544_refresh()) printf("\t[0]Emptying screen:OK\n");
     HAL_Delay(3000);
 
+
     /* Fill the screen completely */
     PCD8544_fill(true);
     if(PCD8544_refresh()) printf("\t[1]Filling screen:OK\n");
     HAL_Delay(3000);
 
+
     /* Test inversion */
     if(PCD8544_invert(true)) printf("\t[2]Inverting screen:OK\n");
     HAL_Delay(3000);
+
 
     /* Test uninversion */
     if(PCD8544_invert(false)) printf("\t[3]Uninverting screen:OK\n");
     HAL_Delay(3000);
 
-    /* Fill the screen using horizontal lines */
-    for(uint8_t i = 0; i < LCDHEIGHT; i++) PCD8544_draw_hline(0, i, LCDWIDTH, true);
-    if(PCD8544_refresh()) printf("\t[4]Filling screen with hlines:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
 
     /* Fill the screen using horizontal lines */
-    for(uint8_t i = 0; i < LCDWIDTH; i++) PCD8544_draw_vline(i, 0, LCDHEIGHT, true);
+    for(uint8_t i = 0; i < PCD8544_HEIGHT; i++) PCD8544_draw_hline(0, i, PCD8544_WIDTH, true);
+    if(PCD8544_refresh()) printf("\t[4]Filling screen with hlines:OK\n");
+    SCREEN_DELAY_FILL(3000, false);
+
+
+    /* Fill the screen using horizontal lines */
+    for(uint8_t i = 0; i < PCD8544_WIDTH; i++) PCD8544_draw_vline(i, 0, PCD8544_HEIGHT, true);
     if(PCD8544_refresh()) printf("\t[5]Filling screen with vlines:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
+
 
     /* Fill the screen using individual sets */
-    for(uint8_t i = 0; i < LCDWIDTH; i++)
-        for(uint8_t j = 0; j < LCDHEIGHT; j++)
+    for(uint8_t i = 0; i < PCD8544_WIDTH; i++)
+        for(uint8_t j = 0; j < PCD8544_HEIGHT; j++)
             PCD8544_set_pixel(i, j, true);
 
     if(PCD8544_refresh()) printf("\t[6]Filling screen with setpixel:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
 
-    /* Test powering ON/OFF */
+
+    /* Power OFF */
     if(PCD8544_sleep_mode(true)) printf("\t[7]Powering off display:OK\n");
     HAL_Delay(6000);
 
+
+    /* Power ON */
     if(PCD8544_sleep_mode(false)) printf("\t[8]Powering on display:OK\n");
     HAL_Delay(3000);
 }
@@ -160,52 +243,51 @@ static void test_lcd_simple_patterns()
         PCD8544_fill(!color);
 
         /* Draw a chessboard */
-        for(uint8_t j = 0; j < LCDHEIGHT; j++)
+        for(uint8_t j = 0; j < PCD8544_HEIGHT; j++)
         {
             bool toggle = j & 0x01;
-            for(uint8_t i = 0; i < LCDWIDTH; i++)
+            for(uint8_t i = 0; i < PCD8544_WIDTH; i++)
             {
                 PCD8544_set_pixel(i, j, toggle);
                 toggle = !toggle;
             }
         }
-
         if(PCD8544_refresh()) printf("\t[%s]:Chessboard pattern:OK\n", color ? "Black" : "White");
-        HAL_Delay(3000);
-        PCD8544_fill(!color);
+        SCREEN_DELAY_FILL(3000, !color);
+
 
         /* Draw a grid */
-        for(uint8_t i = 0; i < LCDHEIGHT; i++) if((i & 0x01)) PCD8544_draw_hline(0, i, LCDWIDTH, color);
-        for(uint8_t i = 0; i < LCDWIDTH; i++) if((i & 0x01)) PCD8544_draw_vline(i, 0, LCDHEIGHT, color);
+        for(uint8_t i = 0; i < PCD8544_HEIGHT; i++) if((i & 0x01)) PCD8544_draw_hline(0, i, PCD8544_WIDTH, color);
+        for(uint8_t i = 0; i < PCD8544_WIDTH; i++) if((i & 0x01)) PCD8544_draw_vline(i, 0, PCD8544_HEIGHT, color);
         if(PCD8544_refresh()) printf("\t[%s]:Grid pattern:OK\n", color ? "Black" : "White");
-        HAL_Delay(3000);
-        PCD8544_fill(!color);
+        SCREEN_DELAY_FILL(3000, !color);
+
 
         /* Draw parallel horizontal lines */
-        for(uint8_t i = 0; i < LCDHEIGHT; i++) if((i & 0x01)) PCD8544_draw_hline(0, i, LCDWIDTH, color);
+        for(uint8_t i = 0; i < PCD8544_HEIGHT; i++) if((i & 0x01)) PCD8544_draw_hline(0, i, PCD8544_WIDTH, color);
         if(PCD8544_refresh()) printf("\t[%s]:Parallel horizontals:OK\n", color ? "Black" : "White");
-        HAL_Delay(3000);
-        PCD8544_fill(!color);
+        SCREEN_DELAY_FILL(3000, !color);
+
 
         /* Draw parallel vertical lines */
-        for(uint8_t i = 0; i < LCDWIDTH; i++) if((i & 0x01)) PCD8544_draw_vline(i, 0, LCDHEIGHT, color);
+        for(uint8_t i = 0; i < PCD8544_WIDTH; i++) if((i & 0x01)) PCD8544_draw_vline(i, 0, PCD8544_HEIGHT, color);
         if(PCD8544_refresh()) printf("\t[%s]:Parallel verticals:OK\n", color ? "Black" : "White");
-        HAL_Delay(3000);
-        PCD8544_fill(!color);
+        SCREEN_DELAY_FILL(3000, !color);
+
 
         /* Draw non overlapping rectangles */
-        for(uint8_t i = 0; i < (LCDHEIGHT - 1 - i); i+=2) PCD8544_draw_rectangle(i, LCDWIDTH - 1 - i, i, LCDHEIGHT - 1 - i, color, false);
+        for(uint8_t i = 0; i < (PCD8544_HEIGHT - 1 - i); i+=2) PCD8544_draw_rectangle(i, PCD8544_WIDTH - 1 - i, i, PCD8544_HEIGHT - 1 - i, color, false);
         if(PCD8544_refresh()) printf("\t[%s]:Rectangles non-overlapping:OK\n", color ? "Black" : "White");
-        HAL_Delay(3000);
-        PCD8544_fill(!color);
+        SCREEN_DELAY_FILL(3000, !color);
+
 
         /* Draw vertical lines that scale should scale with height */
-        for(uint8_t i = 1; i < LCDWIDTH/2; i++) PCD8544_draw_vline(i, 0, i, color);
-        for(uint8_t i = LCDWIDTH/2; i < LCDWIDTH; i++) PCD8544_draw_vline(i, 0, LCDWIDTH - i, color);
+        for(uint8_t i = 1; i < PCD8544_WIDTH/2; i++) PCD8544_draw_vline(i, 0, i, color);
+        for(uint8_t i = PCD8544_WIDTH/2; i < PCD8544_WIDTH; i++) PCD8544_draw_vline(i, 0, PCD8544_WIDTH - i, color);
+
 
         if(PCD8544_refresh()) printf("\t[%s]:Vertical line triangle:OK\n", color ? "Black" : "White");
-        HAL_Delay(3000);
-        PCD8544_fill(!color);
+        SCREEN_DELAY_FILL(3000, !color);
 
         /* Toggle foreground */
         color = !color;
@@ -214,28 +296,28 @@ static void test_lcd_simple_patterns()
     /* Draw some flag patterns */
     PCD8544_fill(false);
 
+
     /* Flag pattern 1 - Cross */
-    PCD8544_draw_rectangle(0, LCDWIDTH - 1, LCDHEIGHT/2 - 4, LCDHEIGHT/2 + 3, true, true);
-    PCD8544_draw_rectangle(LCDWIDTH/2 - 4, LCDWIDTH/2 + 3, 0, LCDHEIGHT - 1, true, true);
+    PCD8544_draw_rectangle(0, PCD8544_WIDTH - 1, PCD8544_HEIGHT/2 - 4, PCD8544_HEIGHT/2 + 3, true, true);
+    PCD8544_draw_rectangle(PCD8544_WIDTH/2 - 4, PCD8544_WIDTH/2 + 3, 0, PCD8544_HEIGHT - 1, true, true);
     if(PCD8544_refresh()) printf("\tFlag variant 1:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
+
 
     /* Flag pattern 2 */
-    for(uint8_t dist = 0, i = 0; i < 5; i++, dist += 10) PCD8544_draw_rectangle(0, LCDWIDTH - 1, dist + 0, dist + 4, true, true);
+    for(uint8_t dist = 0, i = 0; i < 5; i++, dist += 10) PCD8544_draw_rectangle(0, PCD8544_WIDTH - 1, dist + 0, dist + 4, true, true);
     PCD8544_draw_rectangle(0, 29, 0, 24, true, true);
     PCD8544_draw_rectangle(0, 29, 10, 14, false, true);
     PCD8544_draw_rectangle(13, 17, 0, 24, false, true);
     if(PCD8544_refresh()) printf("\tFlag variant 2:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
+
 
     /* Flag pattern 3 */
-    PCD8544_draw_rectangle(0, LCDWIDTH/3 - 1, 0, LCDHEIGHT - 1, true, true);
-    PCD8544_draw_rectangle(2*(LCDWIDTH/3), LCDWIDTH - 1 , 0, LCDHEIGHT - 1, true, true);
+    PCD8544_draw_rectangle(0, PCD8544_WIDTH/3 - 1, 0, PCD8544_HEIGHT - 1, true, true);
+    PCD8544_draw_rectangle(2*(PCD8544_WIDTH/3), PCD8544_WIDTH - 1 , 0, PCD8544_HEIGHT - 1, true, true);
     if(PCD8544_refresh()) printf("\tFlag pattern 3:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
 }
 
 /* Draw intermediate 'approximate' shapes/patterns.
@@ -246,16 +328,14 @@ static void test_lcd_simple_patterns()
 static void test_lcd_intermediate_patterns()
 {
     /* Clear screen */
-    PCD8544_fill(false);
-    PCD8544_refresh();
-    HAL_Delay(3000);
+    SCREEN_DELAY_FILL(3000, false);
 
     /* Draw some generic lines - Should see something like a symmetric curtain */
     for(uint8_t i = 0; i < 80; i += 5) PCD8544_draw_line(0, i , 0, 70, true);
-    for(uint8_t i = 0; i < 80; i += 5) PCD8544_draw_line(LCDWIDTH - 1, LCDWIDTH - 1 - i , 0, 70, true);
+    for(uint8_t i = 0; i < 80; i += 5) PCD8544_draw_line(PCD8544_WIDTH - 1, PCD8544_WIDTH - 1 - i , 0, 70, true);
     if(PCD8544_refresh()) printf("\t[0]Generic line - (Curtains off):OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
+
 
     /* Draw orthogonal triangles */
     for(uint8_t i = 0; i < 15; i += 2)
@@ -283,11 +363,9 @@ static void test_lcd_intermediate_patterns()
             toggle = !toggle;
         }
     }
-
-    /* Draw random circles */
     if(PCD8544_refresh()) printf("\t[1]Drawing triangles:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
+
 
     /* Draw circles - Not filled */
     PCD8544_draw_circle(0, 0, 10, true);
@@ -297,25 +375,31 @@ static void test_lcd_intermediate_patterns()
     PCD8544_draw_circle(40, 20, 20, true);
     PCD8544_draw_circle(40, 20, 30, true);
     if(PCD8544_refresh()) printf("\t[2]Drawing circles:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(3000, false);
 
-    /* Draw part circles - Not filled */
-    PCD8544_draw_part_circle(0, 0, 10, 0x03, true);
-    PCD8544_draw_part_circle(0, 0, 20, 0x0f, true);
-    PCD8544_draw_part_circle(0, 0, 30, 0x07, true);
-    PCD8544_draw_part_circle(40, 20, 10, 0x02, true);
-    PCD8544_draw_part_circle(40, 20, 20, 0x04, true);
-    PCD8544_draw_part_circle(40, 20, 30, 0x0f, true);
-    if(PCD8544_refresh()) printf("\t[3]Drawing part circles:OK\n");
-    HAL_Delay(3000);
-    PCD8544_fill(false);
+
+    /* Draw filled circles */
+    PCD8544_draw_fill_circle(20, 20, 10, true);
+    PCD8544_draw_fill_circle(0, 0, 5, true);
+    PCD8544_draw_fill_circle(40, 40, 5, true);
+    if(PCD8544_refresh()) printf("\t[3]Drawing filled circles:OK\n");
+    SCREEN_DELAY_FILL(3000, false);
+
+
+    /* Draw rounded rectangles */
+    PCD8544_draw_round_rect(10, 40, 10, 40, true, false);
+    PCD8544_draw_round_rect(20, 30, 20, 30, true, false);
+    PCD8544_draw_round_rect(55, 65, 25, 35, true, true);
+    if(PCD8544_refresh()) printf("\t[4]Drawing rounded rectangles:OK\n");
+    SCREEN_DELAY_FILL(3000, false);
+
 }
 
 /* Draw and testes bitmap functionality */
 static void test_lcd_bitmaps()
 {
     uint32_t time;
+    bool ret;
 
     /* Chessboard bitmap */
     const uint8_t bitmap1[4 * 8] = {    0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa, 0x55, 0xaa,
@@ -325,7 +409,7 @@ static void test_lcd_bitmaps()
                                    };
 
     /* Elegant bitmap */
-    const uint8_t epd_bitmap_rsz_pornhub_logosvg[] =
+    const uint8_t elegant_bitmap[] =
     {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -397,48 +481,53 @@ static void test_lcd_bitmaps()
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     };
 
+    /* Bitmap 1 test */
     START_TIMER();
     PCD8544_draw_bitmap_opt8(bitmap1, 0, 0, 8, 32);
     PCD8544_draw_bitmap(bitmap1, 17, 0, 32, 8);
     time = GET_TIMER();
-    PCD8544_refresh();
-    HAL_Delay(3000);
-    PCD8544_fill(false);
-    printf("\t[1]Drawing simple bitmap twice - Time:%ld\n", time);
+    ret = PCD8544_refresh();
+    SCREEN_DELAY_FILL(3000, false);
+    if(ret) printf("\t[1]Drawing simple bitmap twice - Time:%ld\n", time);
 
+
+    /* Bitmap 2 test */
     START_TIMER();
-    PCD8544_draw_bitmap(epd_bitmap_rsz_pornhub_logosvg, 0, 0, 84, 48);
+    PCD8544_draw_bitmap(elegant_bitmap, 0, 0, 84, 48);
     time = GET_TIMER();
-    PCD8544_refresh();
-    HAL_Delay(3000);
-    PCD8544_fill(false);
-    printf("\t[2]Drawing elegant bitmap ;) - Time:%ld\n", time);
+    ret = PCD8544_refresh();
+    SCREEN_DELAY_FILL(3000, false);
+    if(ret) printf("\t[2]Drawing elegant bitmap ;) - Time:%ld\n", time);
 
+
+    /* Bitmap 2 test with opt routine */
     START_TIMER();
-    PCD8544_draw_bitmap_opt8(epd_bitmap_rsz_pornhub_logosvg, 0, 0, 84, 48);
+    PCD8544_draw_bitmap_opt8(elegant_bitmap, 0, 0, 84, 48);
     time = GET_TIMER();
-    PCD8544_refresh();
-    HAL_Delay(3000);
-    PCD8544_fill(false);
-    printf("\t[3]Drawing elegant bitmap ;) with opt routine - Time:%ld\n", time);
+    ret = PCD8544_refresh();
+    SCREEN_DELAY_FILL(3000, false);
+    if(ret) printf("\t[3]Drawing elegant bitmap ;) with opt routine - Time:%ld\n", time);
 
+
+    /* Bitmap 3 test with opt routine */
     START_TIMER();
     PCD8544_draw_bitmap_opt8(bitmap2, 0, 0, 84, 48);
     time = GET_TIMER();
-    PCD8544_refresh();
-    HAL_Delay(3000);
-    PCD8544_fill(false);
-    printf("\t[4]Drawing space invaders bitmap with opt routine - Time:%ld\n", time);
+    ret = PCD8544_refresh();
+    SCREEN_DELAY_FILL(3000, false);
+    if(ret) printf("\t[4]Drawing space invaders bitmap with opt routine - Time:%ld\n", time);
 }
 
 /* Draw and testes printing text functionality */
 static void test_lcd_text()
 {
-    uint32_t time;
-    uint32_t reps = 7;
+    uint32_t time, reps = 7;
 
+    /* Empty the screen initially */
     PCD8544_fill(false);
 
+
+    /* Test 1 - Scroll test */
     PCD8544_coord(0, 0);
     for(uint8_t i = 0; i < reps; i++)
     {
@@ -446,11 +535,12 @@ static void test_lcd_text()
         PCD8544_print_str("Scroll large text!", LARGE_FONT, false);
         time = GET_TIMER();
         PCD8544_refresh();
-        HAL_Delay(500);
-        PCD8544_fill(false);
+        SCREEN_DELAY_FILL(500, false);
     }
     printf("\t[1]Printing scroll text - Time:%ld\n", time);
 
+
+    /* Test 2 - Newline test */
     PCD8544_coord(0, 0);
     for(uint8_t i = 0; i < reps; i++)
     {
@@ -458,11 +548,12 @@ static void test_lcd_text()
         PCD8544_print_str("Medium newline\n", MEDIUM_FONT | ALIGN_BOTTOM, false);
         time = GET_TIMER();
         PCD8544_refresh();
-        HAL_Delay(500);
-        PCD8544_fill(false);
+        SCREEN_DELAY_FILL(500, false);
     }
     printf("\t[2]Printing newline - Time:%ld\n", time);
 
+
+    /* Test 3 - Inverted test */
     PCD8544_coord(0, 0);
     for(uint8_t i = 0; i < reps; i++)
     {
@@ -470,11 +561,12 @@ static void test_lcd_text()
         PCD8544_print_str("Inverted top centering", MEDIUM_FONT | ALIGN_UP, true);
         time = GET_TIMER();
         PCD8544_refresh();
-        HAL_Delay(500);
-        PCD8544_fill(false);
+        SCREEN_DELAY_FILL(500, false);
     }
     printf("\t[3]Printing inverted - Time:%ld\n", time);
 
+
+    /* Test 4 - Small center font */
     PCD8544_coord(0, 0);
     for(uint8_t i = 0; i < reps; i++)
     {
@@ -482,11 +574,12 @@ static void test_lcd_text()
         PCD8544_print_str("Small center\n", SMALL_FONT | ALIGN_CENTER, false);
         time = GET_TIMER();
         PCD8544_refresh();
-        HAL_Delay(500);
-        PCD8544_fill(false);
+        SCREEN_DELAY_FILL(500, false);
     }
     printf("\t[4]Small center - Time:%ld\n", time);
 
+
+    /* Test 5 - Small top font */
     PCD8544_coord(0, 0);
     for(uint8_t i = 0; i < reps; i++)
     {
@@ -494,11 +587,12 @@ static void test_lcd_text()
         PCD8544_print_str("Small top\n", SMALL_FONT | ALIGN_UP, false);
         time = GET_TIMER();
         PCD8544_refresh();
-        HAL_Delay(500);
-        PCD8544_fill(false);
+        SCREEN_DELAY_FILL(500, false);
     }
     printf("\t[5]Small top - Time:%ld\n", time);
 
+
+    /* Test 6 - Small bottom font */
     PCD8544_coord(0, 0);
     for(uint8_t i = 0; i < reps; i++)
     {
@@ -506,11 +600,12 @@ static void test_lcd_text()
         PCD8544_print_str("SMALL BOTTOM\n", SMALL_FONT | ALIGN_BOTTOM, false);
         time = GET_TIMER();
         PCD8544_refresh();
-        HAL_Delay(500);
-        PCD8544_fill(false);
+        SCREEN_DELAY_FILL(500, false);
     }
     printf("\t[6]Small bottom - Time:%ld\n", time);
 
+
+    /* Test 7 - Small grammar */
     PCD8544_coord(0, 0);
     START_TIMER();
     char str [2] = "1";
@@ -521,10 +616,11 @@ static void test_lcd_text()
     }
     time = GET_TIMER();
     PCD8544_refresh();
-    HAL_Delay(5000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(5000, false);
     printf("\t[7]Printing small grammar - Time:%ld\n", time);
 
+
+    /* Test 8 - Medium grammar */
     PCD8544_coord(0, 0);
     START_TIMER();
     for(char i = 0x20; i != 0x7f; i++)
@@ -534,10 +630,11 @@ static void test_lcd_text()
     }
     time = GET_TIMER();
     PCD8544_refresh();
-    HAL_Delay(1000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(5000, false);
     printf("\t[8]Printing medium grammar - Time:%ld\n", time);
 
+
+    /* Test 9 - Large grammar */
     PCD8544_coord(0, 0);
     START_TIMER();
     for(char i = 0x20; i != 0x7f; i++)
@@ -547,39 +644,44 @@ static void test_lcd_text()
     }
     time = GET_TIMER();
     PCD8544_refresh();
-    HAL_Delay(5000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(5000, false);
     printf("\t[9]Printing large grammar - Time:%ld\n", time);
 
+
+    /* Test 10 - Free print test 1 */
     START_TIMER();
     PCD8544_print_fstr("Hello", LARGE_FONT, 0, 0, false);
     PCD8544_print_fstr("Hello", LARGE_FONT, 4, 13, false);
     time = GET_TIMER();
     PCD8544_refresh();
-    HAL_Delay(5000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(5000, false);
     printf("\t[10]Printing free text - Time:%ld\n", time);
 
+
+    /* Test 11 - Free print test 2 */
     START_TIMER();
     PCD8544_print_fstr("Hello", SMALL_FONT | ALIGN_BOTTOM, 0, 0, false);
     PCD8544_print_fstr("Hello", SMALL_FONT | ALIGN_BOTTOM, 4, 13, false);
     time = GET_TIMER();
     PCD8544_refresh();
-    HAL_Delay(5000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(5000, false);
     printf("\t[11]Printing free text 2 - Time:%ld\n", time);
 
+
+    /* Test 12 - Free print test 3 */
     START_TIMER();
     PCD8544_print_fstr("Hello", MEDIUM_FONT | ALIGN_BOTTOM, 0, 0, false);
     PCD8544_print_fstr("Hello", MEDIUM_FONT | ALIGN_BOTTOM, 4, 13, false);
     PCD8544_print_fstr("Hello", MEDIUM_FONT | ALIGN_BOTTOM, 70, 20, false);
     time = GET_TIMER();
     PCD8544_refresh();
-
-    HAL_Delay(5000);
-    PCD8544_fill(false);
+    SCREEN_DELAY_FILL(5000, false);
     printf("\t[12]Printing free text 3 - Time:%ld\n", time);
 }
+
+/**********************************/
+/*********** INIT CODE ************/
+/**********************************/
 
 /**
   * @brief System Clock Configuration
@@ -733,6 +835,11 @@ static void MX_DMA_Init(void)
     HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
 }
 
+/**
+  * @brief Enable CPU core clock counter
+  * @param None
+  * @retval None
+  */
 static void MX_Core_Counter_Init(void)
 {
   unsigned int *DWT_LAR      = (unsigned int *) 0xE0001FB0; //address of the register
