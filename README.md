@@ -25,7 +25,7 @@ For the initialization user has to define a screen handle, initialize the fields
 
     uint8_t pcd8544_buffer[PCD8544_BUFFER_SZ];
     pcd_8544_t pcd8544_handle ={ // Which GPIOs to use (Pin-port combinations) //
-    							.rst_pin = RST_PIN,	
+                                .rst_pin = RST_PIN,	
                                 .rst_port = RST_PORT,
                                 .ce_pin = CE_PIN,
                                 .ce_port = CE_PORT,
