@@ -23,26 +23,28 @@ The user has the option of using SPI in either DMA or polling mode for the trans
 
 For the initialization user has to define a screen handle, initialize the fields and make a call to the appropriate initialization routine like below:
 
-    uint8_t pcd8544_buffer[PCD8544_BUFFER_SZ];
-    pcd_8544_t pcd8544_handle ={ // Which GPIOs to use (Pin-port combinations) //
-                                .rst_pin = RST_PIN,	
-                                .rst_port = RST_PORT,
-                                .ce_pin = CE_PIN,
-                                .ce_port = CE_PORT,
-                                .dc_pin = DC_PIN,
-                                .dc_port = DC_PORT,
-                                
-                                // SPI HAL handle and the buffer to use //
-                                .h_spi = &hspi2,
-                                .buffer = pcd8544_buffer,
-    
-                                // Set contrast/bias values //
-                                .contast = PCD8544_VOP_DEFAULT,
-                                .bias = PCD8544_BIAS_DEFAULT
-                               };
-                                
-    // Initialization routine //
-    bool status = PCD8544_init(&pcd8544_handle);
+```c
+uint8_t pcd8544_buffer[PCD8544_BUFFER_SZ];
+pcd_8544_t pcd8544_handle ={ // Which GPIOs to use (Pin-port combinations) //
+                            .rst_pin = RST_PIN,	
+                            .rst_port = RST_PORT,
+                            .ce_pin = CE_PIN,
+                            .ce_port = CE_PORT,
+                            .dc_pin = DC_PIN,
+                            .dc_port = DC_PORT,
+                            
+                            // SPI HAL handle and the buffer to use //
+                            .h_spi = &hspi2,
+                            .buffer = pcd8544_buffer,
+
+                            // Set contrast/bias values //
+                            .contast = PCD8544_VOP_DEFAULT,
+                            .bias = PCD8544_BIAS_DEFAULT
+                           };
+                            
+// Initialization routine //
+bool status = PCD8544_init(&pcd8544_handle);
+```
 
 Common things to look out for (issues/tips):
 
@@ -59,20 +61,22 @@ Common things to look out for (issues/tips):
 
 The library supports multiple shapes, bitmap drawing and character printing. User has to call a drawing routine followed by a screen refresh, just like below:
 
-    // Draw shapes on the screen //
-    PCD8544_draw_line(0, 70 , 0, 10, true);
-    PCD8544_draw_circle(0, 20 , 10, true);
-    PCD8544_draw_rectangle(0, 0, 20, 20, true, false);
-    
-    // Bitmap drawing //
-    PCD8544_draw_bitmap(bitmap, 0, 0, 25, 25);
-    
-    // Set XY initial text coordinates and then print string //
-    PCD8544_coord(0, 0);
-    PCD8544_print_str("Hello World", LARGE_FONT, false);
-    
-    // Update the display //
-    PCD8544_refresh();
+```c
+// Draw shapes on the screen //
+PCD8544_draw_line(0, 70 , 0, 10, true);
+PCD8544_draw_circle(0, 20 , 10, true);
+PCD8544_draw_rectangle(0, 0, 20, 20, true, false);
+
+// Bitmap drawing //
+PCD8544_draw_bitmap(bitmap, 0, 0, 25, 25);
+
+// Set XY initial text coordinates and then print string //
+PCD8544_coord(0, 0);
+PCD8544_print_str("Hello World", LARGE_FONT, false);
+
+// Update the display //
+PCD8544_refresh();
+```
 
 For the character printing, 3 fonts are supported with different centering options when calling the printing routines.
 
@@ -82,7 +86,9 @@ Inside the **example** folder, is a small app that testes most of the functional
 
 Inside the **src** folder, is the core of the library and all the necessary header and source files. Before adding it to your own project, make sure that the correct HAL header is included (around line **17** of file **pcd8544.h**):
 
-    <pcd8544.h> 17: #include "stm32f4xx_hal.h"	// Set your own series (F0, F1, ..) HAL header //
+```c
+<pcd8544.h> 17: #include "stm32f4xx_hal.h"	// Set your own series (F0, F1, ..) HAL header //
+```
 
 ### In progress
 
